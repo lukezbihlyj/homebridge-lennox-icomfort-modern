@@ -2,48 +2,92 @@
   "pluginAlias": "LennoxIComfortModern",
   "pluginType": "platform",
   "singular": true,
+  "headerDisplay": "Lennox S30/E30/M30 thermostat integration via cloud API. Use your myicomfort.com credentials.",
+  "footerDisplay": "For multi-zone systems, each zone will appear as a separate thermostat in HomeKit.",
   "schema": {
     "type": "object",
     "properties": {
+      "name": {
+        "title": "Platform Name",
+        "type": "string",
+        "default": "Lennox iComfort",
+        "description": "The name that will appear in the Homebridge log."
+      },
       "username": {
-        "type": "string"
+        "title": "Email",
+        "type": "string",
+        "format": "email",
+        "required": true,
+        "description": "Your myicomfort.com account email address."
       },
       "password": {
-        "type": "string"
+        "title": "Password",
+        "type": "string",
+        "required": true,
+        "description": "Your myicomfort.com account password."
+      },
+      "pollInterval": {
+        "title": "Poll Interval (seconds)",
+        "type": "integer",
+        "default": 10,
+        "minimum": 5,
+        "maximum": 300,
+        "description": "How often to poll the Lennox cloud for updates (in seconds). Minimum 5 seconds."
+      },
+      "appId": {
+        "title": "Application ID",
+        "type": "string",
+        "description": "Custom application ID for API authentication. Leave blank to use the default."
+      },
+      "debugmode": {
+        "title": "Debug Mode",
+        "type": "boolean",
+        "default": false,
+        "description": "Enable debug logging and use test device IDs."
       },
       "temperatureUnit": {
-        "title": "Temperature Unit",
+        "title": "Temperature Display Unit",
         "type": "string",
-        "default": "F",
+        "default": "auto",
         "oneOf": [
-          {
-            "title": "C",
-            "enum": [
-              "C"
-            ]
-          },
-          {
-            "title": "F",
-            "enum": [
-              "F"
-            ]
-          }
-        ]
+          { "title": "Auto (use thermostat setting)", "enum": ["auto"] },
+          { "title": "Celsius", "enum": ["C"] },
+          { "title": "Fahrenheit", "enum": ["F"] }
+        ],
+        "description": "Temperature display preference. 'Auto' uses whatever your thermostat is set to."
       }
     },
     "required": [
       "username",
-      "password",
-      "temperatureUnit"
+      "password"
     ]
   },
   "layout": [
     {
-      "type": "section",
+      "type": "fieldset",
+      "title": "Account Credentials",
       "items": [
         "username",
-        "password",
-        "temperatureUnit"
+        "password"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Optional Settings",
+      "expandable": true,
+      "items": [
+        "name",
+        "pollInterval",
+        "temperatureUnit",
+        "debugmode"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Advanced",
+      "expandable": true,
+      "items": [
+        "appId"
       ]
     }
   ]

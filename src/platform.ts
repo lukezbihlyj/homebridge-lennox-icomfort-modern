@@ -1,171 +1,256 @@
-import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic, UnknownContext } from 'homebridge';
+import {
+  API,
+  DynamicPlatformPlugin,
+  Logger,
+  PlatformAccessory,
+  PlatformConfig,
+  Service,
+  Characteristic,
+  UnknownContext,
+} from 'homebridge';
 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { Thermostat } from './Thermostat';
-import icomfort = require('icomfort');
-import { getThermostatInfoResponse, iComfort, ThermostatInfo } from './types/iComfortTypes';
-import { TemperatureUnits } from './types/params';
+import {
+  LennoxS30Client,
+  LennoxSystem,
+  LennoxZone,
+  LennoxS30Error,
+} from './api';
 
 /**
- * HomebridgePlatform
- * This class is the main constructor for your plugin, this is where you should
- * parse the user config and discover/register accessories with Homebridge.
+ * Accessory context for storing zone information
+ */
+export interface ZoneAccessoryContext {
+  systemId: string;
+  zoneId: number;
+  systemName: string;
+  zoneName: string;
+  productType: string;
+}
+
+/**
+ * LennoxS30Platform
+ * Main platform plugin for Lennox S30/E30/M30 thermostats
  */
 export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
 
-  // this is used to track restored cached accessories
+  // Track restored cached accessories
   public readonly accessories: PlatformAccessory<UnknownContext>[] = [];
+
+  // Platform configuration
   name: string | undefined;
   username: string;
   password: string;
-
-  icomfort: iComfort;
-  service: any;
-  temperatureUnit: any;
+  pollInterval: number;
   debug: boolean;
+
+  // Lennox S30 API client
+  public client: LennoxS30Client;
+
+  // Temperature display unit preference
+  temperatureUnit: number;
+  temperatureUnitConfig: string;
+
+  // Map of zone unique IDs to Thermostat handlers
+  private thermostatHandlers: Map<string, Thermostat> = new Map();
 
   constructor(
     public readonly log: Logger,
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
-    this.log = log;
-    this.log.info('Finished initializing platform:', this.config.name);
+    this.log.info('Initializing Lennox S30 platform:', this.config.name);
 
     this.name = config.name;
     this.username = config.username;
     this.password = config.password;
+    this.pollInterval = config.pollInterval || 10;
+    this.debug = config.debugmode || false;
 
+    // Temperature unit: will be set from config or auto-detected from thermostat
     this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+    this.temperatureUnitConfig = config.temperatureUnit || 'auto';
 
-    this.icomfort = new icomfort({
-      username: this.username,
-      password: this.password,
-    });
+    // Initialize the Lennox S30 API client
+    this.client = new LennoxS30Client(
+      {
+        email: this.username,
+        password: this.password,
+        appId: config.appId,
+        pollInterval: this.pollInterval,
+      },
+      this.log,
+    );
 
-    if (config.debugmode) {
-      this.debug = true;
-    } else {
-      this.debug = false;
-    }
+    // Register for zone updates
+    this.client.onUpdate(this.handleZoneUpdate.bind(this));
 
-    // When this event is fired it means Homebridge has restored all cached accessories from disk.
-    // Dynamic Platform plugins should only register new accessories after this event was fired,
-    // in order to ensure they weren't added to homebridge already. This event can also be used
-    // to start discovery of new accessories.
+    // When Homebridge has finished launching
     this.api.on('didFinishLaunching', async () => {
-      log.debug('Executed didFinishLaunching callback');
-      // run the method to discover / register your devices as accessories
+      this.log.debug('Executed didFinishLaunching callback');
       await this.discoverDevices();
     });
   }
 
   /**
-   * This function is invoked when homebridge restores cached accessories from disk at startup.
-   * It should be used to setup event handlers for characteristics and update respective values.
+   * Handle zone updates from the API client
    */
-  configureAccessory(accessory: PlatformAccessory<UnknownContext>) {
-    this.log.info('Loading accessory from cache:', accessory.displayName);
+  private handleZoneUpdate(system: LennoxSystem, zone: LennoxZone): void {
+    const handler = this.thermostatHandlers.get(zone.uniqueId);
+    if (handler) {
+      handler.updateFromZone(zone);
+    }
+  }
 
-    // add the restored accessory to the accessories cache so we can track if it has already been registered
+  /**
+   * Restore cached accessories from disk at startup
+   */
+  configureAccessory(accessory: PlatformAccessory<UnknownContext>): void {
+    this.log.info('Loading accessory from cache:', accessory.displayName);
     this.accessories.push(accessory);
   }
 
   /**
-   * This is an example method showing how to register discovered accessories.
-   * Accessories must only be registered once, previously created accessories
-   * must not be registered again to prevent "duplicate UUID" errors.
+   * Discover and register devices from Lennox cloud
    */
-  async discoverDevices() {
+  async discoverDevices(): Promise<void> {
+    try {
+      // Connect to Lennox cloud API
+      this.log.info('Connecting to Lennox S30 cloud...');
+      await this.client.serverConnect();
 
-    // EXAMPLE ONLY
-    // A real plugin you would discover accessories from the local network, cloud services
-    // or a user-defined array in the platform config.
-    // const devices = this.config.accessories;
+      // Initialize and wait for zone data
+      this.log.info('Initializing systems and zones...');
+      await this.client.initialize();
 
-    const devices = await this.icomfort.getSystemsInfo({
-      userId: this.username,
-    });
-
-
-    const thermostatDetailsRequests = devices.Systems.map(d => {
-      return this.icomfort.getThermostatInfoList({
-        GatewaySN: d.Gateway_SN,
-        TempUnit: 0,
+      // Start the message pump for ongoing updates
+      this.client.startMessagePump((error) => {
+        this.log.error('Message pump error:', error.message);
       });
-    });
 
-    const thermostatDetailsResponses = await Promise.allSettled(thermostatDetailsRequests);
+      // Process discovered systems and zones
+      for (const system of this.client.systemList) {
+        this.log.info(`Processing system: ${system.name} (${system.sysId})`);
 
-    if (thermostatDetailsResponses) {
-
-      Array.prototype.forEach.call(thermostatDetailsResponses, (tStatInfo: PromiseSettledResult<getThermostatInfoResponse>) => {
-
-        if (tStatInfo.status === 'fulfilled') {
-
-          const thermostat: ThermostatInfo = tStatInfo.value.tStatInfo[0];
-
-          const desiredTempUnit = thermostat.Pref_Temp_Units === TemperatureUnits.C
-            ? this.Characteristic.TemperatureDisplayUnits.CELSIUS
-            : this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
-
-          if (!(this.temperatureUnit === desiredTempUnit)) {
-            this.temperatureUnit = desiredTempUnit;
-          }
-
-          const deviceMetaData = devices.Systems.find(d => d.Gateway_SN === thermostat.GatewaySN);
-
-          thermostat.System_Name = deviceMetaData.System_Name;
-          thermostat.deviceFirmware = deviceMetaData.Firmware_Ver;
-
-          // generate a unique id for the accessory this should be generated from
-          // something globally unique, but constant, for example, the device serial
-          // number or MAC address
-          const uuid = this.api.hap.uuid.generate(this.debug ? 'dev' + thermostat.GatewaySN : thermostat.GatewaySN);
-          // see if an accessory with the same uuid has already been registered and restored from
-          // the cached devices we stored in the `configureAccessory` method above
-          const existingAccessory: PlatformAccessory<UnknownContext> | undefined =
-            this.accessories.find(accessory => accessory.UUID === uuid);
-          if (existingAccessory) {
-            // the accessory already exists
-            this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-
-            // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-            // existingAccessory.context.device = device;
-            // this.api.updatePlatformAccessories([existingAccessory]);
-
-            // create the accessory handler for the restored accessory
-            // this is imported from `platformAccessory.ts`
-            new Thermostat(this, existingAccessory);
-
-            // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
-            // remove platform accessories when no longer present
-            // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-            // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
+        // Set temperature unit based on config or system setting
+        if (this.temperatureUnitConfig === 'C') {
+          this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.CELSIUS;
+          this.log.info('Temperature unit set to Celsius (from config)');
+        } else if (this.temperatureUnitConfig === 'F') {
+          this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+          this.log.info('Temperature unit set to Fahrenheit (from config)');
+        } else {
+          // Auto: use thermostat's setting
+          if (system.temperatureUnit === 'C') {
+            this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.CELSIUS;
+            this.log.info('Temperature unit set to Celsius (from thermostat)');
           } else {
-            // the accessory does not yet exist, so we need to create it
-            this.log.info('Adding new accessory:', deviceMetaData.System_Name);
-
-            // create a new accessory
-            const accessory = new this.api.platformAccessory(deviceMetaData.System_Name, uuid);
-
-            // // store a copy of the device object in the `accessory.context`
-            // // the `context` property can be used to store any data about the accessory you may need
-            accessory.context.device = thermostat;
-
-            // // create the accessory handler for the newly create accessory
-            // // this is imported from `platformAccessory.ts`
-            new Thermostat(this, accessory);
-
-            // // link the accessory to your platform
-            this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+            this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+            this.log.info('Temperature unit set to Fahrenheit (from thermostat)');
           }
         }
-      });
+
+        // Register each active zone as a thermostat accessory
+        const activeZones = system.getActiveZones();
+        this.log.info(`Found ${activeZones.length} active zone(s) in system ${system.name}`);
+
+        for (const zone of activeZones) {
+          this.registerZoneAccessory(system, zone);
+        }
+      }
+
+      // Remove any cached accessories that are no longer present
+      this.cleanupStaleAccessories();
+
+    } catch (error) {
+      if (error instanceof LennoxS30Error) {
+        this.log.error(`Failed to connect to Lennox cloud: ${error.message} (${error.errorCode})`);
+      } else {
+        this.log.error('Failed to discover devices:', error);
+      }
+    }
+  }
+
+  /**
+   * Register a zone as a thermostat accessory
+   */
+  private registerZoneAccessory(system: LennoxSystem, zone: LennoxZone): void {
+    // Generate unique ID for this zone
+    const uniqueId = this.debug ? `dev_${zone.uniqueId}` : zone.uniqueId;
+    const uuid = this.api.hap.uuid.generate(uniqueId);
+
+    // Build display name: "System Name - Zone Name" or just zone name if only one zone
+    const displayName = system.numberOfZones > 1
+      ? `${system.name} - ${zone.name}`
+      : system.name;
+
+    // Check if accessory already exists
+    const existingAccessory = this.accessories.find(acc => acc.UUID === uuid);
+
+    if (existingAccessory) {
+      this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+
+      // Update context with latest info
+      existingAccessory.context = {
+        systemId: system.sysId,
+        zoneId: zone.id,
+        systemName: system.name,
+        zoneName: zone.name,
+        productType: system.productType,
+      } as ZoneAccessoryContext;
+
+      this.api.updatePlatformAccessories([existingAccessory]);
+
+      // Create thermostat handler
+      const handler = new Thermostat(this, existingAccessory, system, zone);
+      this.thermostatHandlers.set(zone.uniqueId, handler);
+
+    } else {
+      this.log.info('Adding new accessory:', displayName);
+
+      // Create new accessory
+      const accessory = new this.api.platformAccessory(displayName, uuid);
+
+      // Store context
+      accessory.context = {
+        systemId: system.sysId,
+        zoneId: zone.id,
+        systemName: system.name,
+        zoneName: zone.name,
+        productType: system.productType,
+      } as ZoneAccessoryContext;
+
+      // Create thermostat handler
+      const handler = new Thermostat(this, accessory, system, zone);
+      this.thermostatHandlers.set(zone.uniqueId, handler);
+
+      // Register with Homebridge
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    }
+  }
+
+  /**
+   * Remove accessories that are no longer present
+   */
+  private cleanupStaleAccessories(): void {
+    // Build set of current zone unique IDs
+    const currentZoneIds = new Set<string>();
+    for (const system of this.client.systemList) {
+      for (const zone of system.getActiveZones()) {
+        const uniqueId = this.debug ? `dev_${zone.uniqueId}` : zone.uniqueId;
+        currentZoneIds.add(this.api.hap.uuid.generate(uniqueId));
+      }
     }
 
-    // loop over the discovered devices and register each one if it has not already been registered
+    // Find and remove stale accessories
+    const staleAccessories = this.accessories.filter(acc => !currentZoneIds.has(acc.UUID));
+
+    if (staleAccessories.length > 0) {
+      this.log.info(`Removing ${staleAccessories.length} stale accessory(s)`);
+      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, staleAccessories);
+    }
   }
 }

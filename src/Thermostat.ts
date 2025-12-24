@@ -1,441 +1,462 @@
-import { Service, PlatformAccessory } from 'homebridge';
+import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
 
 import { LennoxIComfortModernPlatform } from './platform';
-import { TemperatureUnits } from './types/config';
-import { ThermostatInfo, UpdateThresholdRequest, ValidHeatCoolSetPointState } from './types/iComfortTypes';
+import {
+  LennoxSystem,
+  LennoxZone,
+  LENNOX_HVAC_OFF,
+  LENNOX_HVAC_HEAT,
+  LENNOX_HVAC_COOL,
+  LENNOX_HVAC_HEAT_COOL,
+  LENNOX_TO_HOMEKIT_MODE,
+  HOMEKIT_TO_LENNOX_MODE,
+  TEMP_OPERATION_TO_HOMEKIT,
+  HomekitHeatingCoolingState,
+  LENNOX_STATUS_GOOD,
+} from './api';
 
-const heatingCoolingStates = [
-  'OFF',
-  'HEAT',
-  'COOL',
-  'AUTO',
-];
-
-const homekitToIComfortStates = {
-  0: 0,
-  1: 1,
-  2: 2,
-  3: 3,
-};
-
+/**
+ * Thermostat accessory for a Lennox zone
+ */
 export class Thermostat {
   private service: Service;
 
-  gatewaySN: string;
-  targetHeatingCoolingState: any;
+  // References to system and zone
+  private system: LennoxSystem;
+  private zone: LennoxZone;
 
+  // Debounce: ignore updates for a short time after sending a command
+  private lastCommandTime: number = 0;
+  private readonly COMMAND_DEBOUNCE_MS = 5000; // 5 seconds
 
   constructor(
     private readonly platform: LennoxIComfortModernPlatform,
     private readonly accessory: PlatformAccessory,
+    system: LennoxSystem,
+    zone: LennoxZone,
   ) {
+    this.system = system;
+    this.zone = zone;
 
-    const thermostat = accessory.context.device;
-    this.gatewaySN = thermostat.GatewaySN;
-
+    // Set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Name, thermostat.System_Name)
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, this.gatewaySN)
-      .setCharacteristic(this.platform.Characteristic.FirmwareRevision, thermostat.deviceFirmware)
-      .setCharacteristic(this.platform.Characteristic.Model, 'iComfort Thermostat')
+      .setCharacteristic(this.platform.Characteristic.Name, this.displayName)
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, zone.uniqueId)
+      .setCharacteristic(this.platform.Characteristic.FirmwareRevision, '1.0')
+      .setCharacteristic(this.platform.Characteristic.Model, system.productType)
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Lennox');
 
+    // Get or create thermostat service
     this.service = this.accessory.getService(this.platform.Service.Thermostat)
       || this.accessory.addService(this.platform.Service.Thermostat);
 
+    this.service.setCharacteristic(this.platform.Characteristic.Name, this.displayName);
 
-    this.service.setCharacteristic(this.platform.Characteristic.Name, thermostat.System_Name);
-
-
-    // required
-    this.service.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState)
-      .onGet(this.handleCurrentHeatingCoolingStateGet.bind(this));
-
-    this.service.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState)
-      .onGet(this.handleTargetHeatingCoolingStateGet.bind(this))
-      .onSet(this.handleTargetHeatingCoolingStateSet.bind(this));
-
-    this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
-      .onGet(this.handleCurrentTemperatureGet.bind(this));
-
-    this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature)
-      .onGet(this.handleTargetTemperatureGet.bind(this))
-      .onSet(this.handleTargetTemperatureSet.bind(this));
-
-    this.service.getCharacteristic(this.platform.Characteristic.TemperatureDisplayUnits)
-      .onGet(this.handleTemperatureDisplayUnitsGet.bind(this));
-    //optional
-    this.service.getCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature)
-      .onGet(this.handleHeatingThresholdTemperatureGet.bind(this))
-      .onSet(this.handleHeatingThresholdTemperatureSet.bind(this));
-
-    this.service.getCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature)
-      .onGet(this.handleCoolingThresholdTemperatureGet.bind(this))
-      .onSet(this.handleCoolingThresholdTemperatureSet.bind(this));
-
-    this.service.getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity)
-      .onGet(this.handleCurrentRelativeHumidityGet.bind(this));
-
-
-  }
-
-  _logInfo(...args: string[]) {
-    const logger = this.platform.log;
-    logger.info(`[${this.gatewaySN}] ${this.accessory.context.device.System_Name} ${args.join(' ')}`);
-  }
-
-  _logDebug(...args: string[]) {
-    const logger = this.platform.log;
-    logger.debug(`[${this.gatewaySN}] ${this.accessory.context.device.System_Name} ${args.join(' ')}`);
-  }
-
-  _getThermostatBySN(thermostat: ThermostatInfo) {
-    return thermostat.GatewaySN === this.gatewaySN;
-  }
-
-  _fetchThermostatInfo(): Promise<ThermostatInfo> {
-    this._logDebug('Fetching thermostat data');
-    return this.platform.icomfort.getThermostatInfoList({
-      GatewaySN: this.gatewaySN,
-      TempUnit: 0,
-    }).then(res => {
-      const thermostat = res.tStatInfo.find(this._getThermostatBySN.bind(this)) as ThermostatInfo;
-      this._logDebug(JSON.stringify(thermostat));
-      return thermostat;
-    });
-  }
-
-  _setThermostatInfo(newSettings: ThermostatInfo): Promise<number> {
-    this._logDebug('Setting thermostat data');
-    return this.platform.icomfort.setThermostatInfo(newSettings);
-  }
-
-  _getValidHeatingCoolingSetPoints(thermostat: ThermostatInfo, targetTemperature: number): ValidHeatCoolSetPointState {
-
-    const { Heat_Set_Point, Cool_Set_Point, Operation_Mode } = thermostat;
-
-    this._logDebug(targetTemperature + '');
-
-    const validState = {
-      Cool_Set_Point,
-      Heat_Set_Point,
-    };
-
-    if (Operation_Mode === 0) {
-      this._logDebug('Operation mode OFF');
-    }
-    // heat
-    else if (Operation_Mode === 1) {
-      validState.Heat_Set_Point = targetTemperature;
-      if (Cool_Set_Point < targetTemperature + 3) {
-        validState.Cool_Set_Point = targetTemperature + 3;
-      }
-
-    }
-    // cool
-    else if (Operation_Mode === 2) {
-      validState.Cool_Set_Point = targetTemperature;
-      if (Heat_Set_Point > targetTemperature - 3) {
-        validState.Heat_Set_Point = targetTemperature - 3;
-      }
-    }
-    // auto
-    else if (Operation_Mode === 3) {
-      this._logDebug(`Operation mode is ${heatingCoolingStates[3]}, not required`);
-
-    }
-
-    this._logDebug(JSON.stringify(validState));
-    return validState;
-
-  }
-
-  async handleCurrentHeatingCoolingStateGet(): Promise<number | any> {
-    this._logDebug('Triggered GET CurrentHeatingCoolingState');
-    try {
-      const thermostat: ThermostatInfo = await this._fetchThermostatInfo();
-
-      let currentState = 0;
-      if (thermostat.System_Status === 0) {
-        currentState = this.platform.Characteristic.CurrentHeatingCoolingState.OFF;
-      } else if (thermostat.System_Status === 1) {
-        currentState = this.platform.Characteristic.CurrentHeatingCoolingState.HEAT;
-      } else if (thermostat.System_Status === 2) {
-        currentState = this.platform.Characteristic.CurrentHeatingCoolingState.COOL;
-      }
-
-      this._logInfo(`Current heating/cooling state: ${heatingCoolingStates[currentState]}`);
-
-      return currentState;
-
-    } catch (e) {
-      return e;
-    }
-  }
-
-
-  /**
-   * Handle requests to get the current value of the "Target Heating Cooling State" characteristic
-   */
-  async handleTargetHeatingCoolingStateGet(): Promise<number | any> {
-    this._logDebug('Triggered GET TargetHeatingCoolingState');
-
-    try {
-      const thermostat: ThermostatInfo = await this._fetchThermostatInfo();
-
-      let targetHeatingCoolingState = 0;
-
-      if (thermostat.Operation_Mode === 0) {
-        targetHeatingCoolingState =
-          this.platform.Characteristic.TargetHeatingCoolingState.OFF;
-      } else if (thermostat.Operation_Mode === 1) {
-        targetHeatingCoolingState =
-          this.platform.Characteristic.TargetHeatingCoolingState.HEAT;
-      } else if (thermostat.Operation_Mode === 2) {
-        targetHeatingCoolingState =
-          this.platform.Characteristic.TargetHeatingCoolingState.COOL;
-      } else if (thermostat.Operation_Mode === 3) {
-        targetHeatingCoolingState =
-          this.platform.Characteristic.TargetHeatingCoolingState.AUTO;
-      }
-
-      this._logInfo(`Target heating/cooling state: ${heatingCoolingStates[targetHeatingCoolingState]}`);
-      return targetHeatingCoolingState;
-
-    } catch (e) {
-      return e;
-    }
+    // Configure characteristics
+    this.setupCharacteristics();
   }
 
   /**
-   * Handle requests to set the "Target Heating Cooling State" characteristic
+   * Get display name for the accessory
    */
-  async handleTargetHeatingCoolingStateSet(value): Promise<void | any> {
-    this._logDebug('Triggered SET TargetHeatingCoolingState:', value);
-
-    try {
-      const thermostat: ThermostatInfo = await this._fetchThermostatInfo();
-
-      const newSettings = { ...thermostat };
-
-      newSettings.Operation_Mode = homekitToIComfortStates[value];
-
-      this._logDebug(`Cool: ${newSettings.Cool_Set_Point} Heat: ${newSettings.Heat_Set_Point}`);
-
-      await this._setThermostatInfo(newSettings);
-      this._logInfo(`Setting target heating/cooling state to ${heatingCoolingStates[value]} (${homekitToIComfortStates[value]})`);
-    } catch (e) {
-      this.platform.log.error(e as string);
-      return e;
-    }
-  }
-
-  /**
-   * Handle requests to get the current value of the "Current Temperature" characteristic
-   */
-  async handleCurrentTemperatureGet(): Promise<string> {
-    this._logDebug('Triggered GET CurrentTemperature');
-
-    const thermostat: ThermostatInfo = await this._fetchThermostatInfo();
-
-    // set this to a valid value for CurrentTemperature
-    const temp = thermostat.Indoor_Temp;
-    this._logInfo(`Current temperature: ${temp}F ${fToC(temp)}C`);
-    return fToC(temp);
-  }
-
-
-  /**
-   * Handle requests to get the current value of the "Target Temperature" characteristic
-   */
-  async handleTargetTemperatureGet() {
-    this._logDebug('Triggered GET TargetTemperature');
-
-    const thermostat = await this._fetchThermostatInfo();
-    const { Indoor_Temp, Cool_Set_Point, Heat_Set_Point, Operation_Mode } = thermostat;
-
-    let targetTemperature = Indoor_Temp;
-    if (Operation_Mode === 1) {
-      targetTemperature = Heat_Set_Point;
-    } else if (Operation_Mode === 2) {
-      targetTemperature = Cool_Set_Point;
-    } else if (Operation_Mode === 3) {
-
-      if (Indoor_Temp > Cool_Set_Point) {
-        targetTemperature = Cool_Set_Point;
-      } else if (Indoor_Temp < Heat_Set_Point) {
-        targetTemperature = Heat_Set_Point;
-      }
-    }
-    this._logInfo(`Target temperature: ${targetTemperature}F ${fToC(targetTemperature)}C`);
-    return fToC(targetTemperature);
-  }
-
-  /**
-   * Handle requests to set the "Target Temperature" characteristic
-   */
-  async handleTargetTemperatureSet(value): Promise<void | any> {
-    this._logDebug('Triggered SET TargetTemperature:', value);
-    try {
-      const thermostat = await this._fetchThermostatInfo();
-
-      const valueInF = cToF(value);
-
-      const validSetPoints = this._getValidHeatingCoolingSetPoints(thermostat, valueInF);
-
-      this._logDebug(JSON.stringify(validSetPoints));
-
-      if (thermostat.Operation_Mode !== 3) {
-
-
-        const newSettings = { ...thermostat, ...validSetPoints };
-        await this._setThermostatInfo(newSettings);
-        this._logInfo(
-          `Setting target temperature ${heatingCoolingStates[newSettings.Operation_Mode]}: ${cToF(value)}F ${value}C`);
-      } else {
-        this._logDebug(`Operation mode is ${heatingCoolingStates[3]}, not setting target temperature.`);
-      }
-
-    } catch (e) {
-      return e;
-    }
-  }
-
-  /**
-   * Handle requests to get the current value of the "Temperature Display Units" characteristic
-   */
-  handleTemperatureDisplayUnitsGet() {
-    this._logDebug('Triggered GET TemperatureDisplayUnits');
-
-    const { FAHRENHEIT, CELSIUS } = this.platform.Characteristic.TemperatureDisplayUnits;
-
-    const configValue = this.platform.temperatureUnit;
-
-    if (configValue && configValue === TemperatureUnits.C) {
-      return CELSIUS;
+  private get displayName(): string {
+    let baseName: string;
+    
+    if (this.system.numberOfZones > 1) {
+      baseName = `${this.system.name} - ${this.zone.name}`;
     } else {
-      return FAHRENHEIT;
+      baseName = this.system.name;
     }
 
+    // Add "Thermostat" suffix if not already present
+    if (baseName.toLowerCase().endsWith('thermostat')) {
+      return baseName;
+    }
+    return `${baseName} Thermostat`;
   }
 
-  async handleHeatingThresholdTemperatureGet(): Promise<number | any> {
-    try {
-      const thermostat = await this._fetchThermostatInfo();
+  /**
+   * Log info message
+   */
+  private logInfo(...args: string[]): void {
+    this.platform.log.info(`[${this.zone.uniqueId}] ${this.displayName} ${args.join(' ')}`);
+  }
 
-      const heatThreshold = thermostat.Heat_Set_Point;
-      const thresholdInCelsius = fToC(heatThreshold);
-      this._logInfo(`Current heating threshold: ${heatThreshold}F ${thresholdInCelsius}C`);
+  /**
+   * Log debug message
+   */
+  private logDebug(...args: string[]): void {
+    this.platform.log.debug(`[${this.zone.uniqueId}] ${this.displayName} ${args.join(' ')}`);
+  }
 
-      return fToC(heatThreshold);
-    } catch (e) {
-      return e;
+  /**
+   * Setup all thermostat characteristics
+   */
+  private setupCharacteristics(): void {
+    // Current Heating/Cooling State (read-only)
+    this.service.getCharacteristic(this.platform.Characteristic.CurrentHeatingCoolingState)
+      .onGet(this.getCurrentHeatingCoolingState.bind(this));
+
+    // Target Heating/Cooling State
+    this.service.getCharacteristic(this.platform.Characteristic.TargetHeatingCoolingState)
+      .onGet(this.getTargetHeatingCoolingState.bind(this))
+      .onSet(this.setTargetHeatingCoolingState.bind(this));
+
+    // Current Temperature
+    this.service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+      .onGet(this.getCurrentTemperature.bind(this));
+
+    // Target Temperature
+    this.service.getCharacteristic(this.platform.Characteristic.TargetTemperature)
+      .onGet(this.getTargetTemperature.bind(this))
+      .onSet(this.setTargetTemperature.bind(this));
+
+    // Temperature Display Units
+    this.service.getCharacteristic(this.platform.Characteristic.TemperatureDisplayUnits)
+      .onGet(this.getTemperatureDisplayUnits.bind(this));
+
+    // Heating Threshold Temperature (for Auto mode)
+    this.service.getCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature)
+      .onGet(this.getHeatingThresholdTemperature.bind(this))
+      .onSet(this.setHeatingThresholdTemperature.bind(this));
+
+    // Cooling Threshold Temperature (for Auto mode)
+    this.service.getCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature)
+      .onGet(this.getCoolingThresholdTemperature.bind(this))
+      .onSet(this.setCoolingThresholdTemperature.bind(this));
+
+    // Current Relative Humidity
+    this.service.getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity)
+      .onGet(this.getCurrentRelativeHumidity.bind(this));
+  }
+
+  /**
+   * Update from zone data (called when API receives updates)
+   */
+  updateFromZone(zone: LennoxZone): void {
+    this.zone = zone;
+
+    // Ignore updates during debounce period after sending a command
+    const timeSinceLastCommand = Date.now() - this.lastCommandTime;
+    if (timeSinceLastCommand < this.COMMAND_DEBOUNCE_MS) {
+      this.logDebug(`Ignoring update during debounce (${timeSinceLastCommand}ms since last command)`);
+      return;
+    }
+
+    // Update characteristics with new values
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.CurrentHeatingCoolingState,
+      this.mapTempOperationToHomeKit(zone.tempOperation),
+    );
+
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.TargetHeatingCoolingState,
+      this.mapSystemModeToHomeKit(zone.systemMode),
+    );
+
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.CurrentTemperature,
+      this.toCelsius(zone.temperature ?? 70),
+    );
+
+    this.service.updateCharacteristic(
+      this.platform.Characteristic.CurrentRelativeHumidity,
+      zone.humidity ?? 50,
+    );
+
+    // Update setpoints based on mode
+    if (this.isAutoMode()) {
+      this.service.updateCharacteristic(
+        this.platform.Characteristic.HeatingThresholdTemperature,
+        this.toCelsius(zone.hsp),
+      );
+      this.service.updateCharacteristic(
+        this.platform.Characteristic.CoolingThresholdTemperature,
+        this.toCelsius(zone.csp),
+      );
+    } else {
+      this.service.updateCharacteristic(
+        this.platform.Characteristic.TargetTemperature,
+        this.getActiveTargetTemperatureCelsius(),
+      );
     }
   }
 
-  async handleHeatingThresholdTemperatureSet(value): Promise<number | any> {
-    try {
-      const thermostat = await this._fetchThermostatInfo();
+  /**
+   * Check if system is in auto (heat/cool) mode
+   */
+  private isAutoMode(): boolean {
+    return this.zone.systemMode === LENNOX_HVAC_HEAT_COOL;
+  }
 
-      this._logDebug('Heating threshold new temp ', value);
-      const { Cool_Set_Point, Heat_Set_Point } = thermostat;
+  /**
+   * Map Lennox tempOperation to HomeKit CurrentHeatingCoolingState
+   */
+  private mapTempOperationToHomeKit(tempOperation: string): number {
+    return TEMP_OPERATION_TO_HOMEKIT[tempOperation] ?? HomekitHeatingCoolingState.OFF;
+  }
 
+  /**
+   * Map Lennox systemMode to HomeKit TargetHeatingCoolingState
+   */
+  private mapSystemModeToHomeKit(systemMode: string): number {
+    return LENNOX_TO_HOMEKIT_MODE[systemMode] ?? HomekitHeatingCoolingState.OFF;
+  }
 
-      const valueInF = cToF(value);
-      if (valueInF !== Heat_Set_Point) {
+  /**
+   * Map HomeKit TargetHeatingCoolingState to Lennox systemMode
+   */
+  private mapHomeKitToLennoxMode(state: number): string {
+    return HOMEKIT_TO_LENNOX_MODE[state as HomekitHeatingCoolingState] ?? LENNOX_HVAC_OFF;
+  }
 
-        const newOptions: UpdateThresholdRequest = {
-          Heat_Set_Point: cToF(value),
-        };
-        let newCoolPoint = Cool_Set_Point;
-        if (Cool_Set_Point - valueInF < 3) {
-          newCoolPoint = valueInF + 3;
-          newOptions.Cool_Set_Point = newCoolPoint;
-          this._logInfo(`Cooling threshold within 3 degress of heating threshold, adjusting cooling threshold to ${newCoolPoint}`);
-        }
-        const newSettings = { ...thermostat, ...newOptions };
-        await this._setThermostatInfo(newSettings);
-        if (newCoolPoint !== Cool_Set_Point) {
-          this.service.getCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature).updateValue(fToC(newCoolPoint));
-        }
-        `Setting heating threshold temperature to ${valueInF}`;
-      } else {
-        this._logDebug('Heating threshold hasnt changed');
+  /**
+   * Convert Fahrenheit to Celsius
+   */
+  private toCelsius(fahrenheit: number): number {
+    return Number((((fahrenheit - 32) * 5) / 9).toFixed(1));
+  }
+
+  /**
+   * Convert Celsius to Fahrenheit
+   */
+  private toFahrenheit(celsius: number): number {
+    return Math.round((celsius * 9) / 5 + 32);
+  }
+
+  /**
+   * Get active target temperature in Celsius
+   */
+  private getActiveTargetTemperatureCelsius(): number {
+    const mode = this.zone.systemMode;
+
+    if (mode === LENNOX_HVAC_HEAT) {
+      return this.toCelsius(this.zone.hsp);
+    } else if (mode === LENNOX_HVAC_COOL) {
+      return this.toCelsius(this.zone.csp);
+    } else if (mode === LENNOX_HVAC_HEAT_COOL) {
+      // In auto mode, return the closer setpoint to current temp
+      const currentTemp = this.zone.temperature ?? 70;
+      if (currentTemp > this.zone.csp) {
+        return this.toCelsius(this.zone.csp);
+      } else if (currentTemp < this.zone.hsp) {
+        return this.toCelsius(this.zone.hsp);
       }
-    } catch (e) {
-      return e;
+      // If between setpoints, return the average
+      return this.toCelsius((this.zone.hsp + this.zone.csp) / 2);
+    }
+
+    // Default to current temperature if off
+    return this.toCelsius(this.zone.temperature ?? 70);
+  }
+
+  // ============================================================================
+  // Characteristic Handlers
+  // ============================================================================
+
+  /**
+   * Get current heating/cooling state (what the system is actively doing)
+   */
+  async getCurrentHeatingCoolingState(): Promise<CharacteristicValue> {
+    const state = this.mapTempOperationToHomeKit(this.zone.tempOperation);
+    this.logDebug(`Current heating/cooling state: ${this.zone.tempOperation} -> ${state}`);
+    return state;
+  }
+
+  /**
+   * Get target heating/cooling state (what mode the user has selected)
+   */
+  async getTargetHeatingCoolingState(): Promise<CharacteristicValue> {
+    const state = this.mapSystemModeToHomeKit(this.zone.systemMode);
+    this.logDebug(`Target heating/cooling state: ${this.zone.systemMode} -> ${state}`);
+    return state;
+  }
+
+  /**
+   * Set target heating/cooling state
+   */
+  async setTargetHeatingCoolingState(value: CharacteristicValue): Promise<void> {
+    const mode = this.mapHomeKitToLennoxMode(value as number);
+    this.logInfo(`Setting target heating/cooling state to ${mode}`);
+
+    try {
+      // Mark command time for debounce
+      this.lastCommandTime = Date.now();
+      
+      await this.platform.client.setHVACMode(this.zone, mode);
+    } catch (error) {
+      this.platform.log.error(`Failed to set HVAC mode: ${error}`);
+      throw error;
     }
   }
 
-  async handleCoolingThresholdTemperatureGet(): Promise<number | any> {
-    try {
-      const thermostat = await this._fetchThermostatInfo();
-
-      const coolThreshold = thermostat.Cool_Set_Point;
-
-      const thresholdInCelsius = fToC(coolThreshold);
-      this._logInfo(`Current cooling threshold: ${coolThreshold}F ${thresholdInCelsius}C`);
-      return thresholdInCelsius;
-    } catch (e) {
-      return e;
+  /**
+   * Get current temperature in Celsius
+   */
+  async getCurrentTemperature(): Promise<CharacteristicValue> {
+    if (this.zone.temperatureStatus !== LENNOX_STATUS_GOOD) {
+      this.platform.log.warn(`Zone ${this.displayName} has bad temperature status: ${this.zone.temperatureStatus}`);
     }
+
+    const tempF = this.zone.temperature ?? 70;
+    const tempC = this.toCelsius(tempF);
+    this.logDebug(`Current temperature: ${tempF}°F (${tempC}°C)`);
+    return tempC;
   }
 
-  async handleCoolingThresholdTemperatureSet(value): Promise<number | any> {
+  /**
+   * Get target temperature in Celsius
+   */
+  async getTargetTemperature(): Promise<CharacteristicValue> {
+    const tempC = this.getActiveTargetTemperatureCelsius();
+    this.logDebug(`Target temperature: ${tempC}°C`);
+    return tempC;
+  }
+
+  /**
+   * Set target temperature
+   */
+  async setTargetTemperature(value: CharacteristicValue): Promise<void> {
+    const tempC = value as number;
+    const tempF = this.toFahrenheit(tempC);
+    this.logInfo(`Setting target temperature to ${tempF}°F (${tempC}°C)`);
+
     try {
-      const thermostat = await this._fetchThermostatInfo();
+      const mode = this.zone.systemMode;
 
-      this._logDebug('Heating threshold new temp ', value);
-
-      const { Cool_Set_Point, Heat_Set_Point } = thermostat;
-
-
-      const valueInF = cToF(value);
-      if (valueInF !== Cool_Set_Point) {
-
-        const newOptions: UpdateThresholdRequest = {
-          Cool_Set_Point: cToF(value),
-        };
-        let newHeatPoint = Heat_Set_Point;
-        if (valueInF - Heat_Set_Point < 3) {
-          newHeatPoint = valueInF - 3;
-          newOptions.Heat_Set_Point = newHeatPoint;
-          this._logInfo(`Heating threshold within 3 degress of cooling threshold, adjusting heating threshold to ${newHeatPoint}`);
-        }
-        const newSettings = { ...thermostat, ...newOptions };
-        await this._setThermostatInfo(newSettings);
-        if (newHeatPoint !== Heat_Set_Point) {
-          this.service.getCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature).updateValue(fToC(newHeatPoint));
-        }
-        this._logInfo(`Setting cooling threshold temperature to ${valueInF}`);
-      } else {
-        this._logDebug('Cooling threshold hasnt changed');
+      if (mode === LENNOX_HVAC_OFF) {
+        this.logDebug('System is off, not setting temperature');
+        return;
       }
-    } catch (e) {
-      return e;
+
+      if (mode === LENNOX_HVAC_HEAT_COOL) {
+        this.logDebug('System is in auto mode, use threshold temperatures instead');
+        return;
+      }
+
+      // Mark command time for debounce
+      this.lastCommandTime = Date.now();
+
+      if (mode === LENNOX_HVAC_HEAT) {
+        // Ensure cooling setpoint stays above heating setpoint
+        let csp = this.zone.csp;
+        if (csp < tempF + 3) {
+          csp = tempF + 3;
+        }
+        await this.platform.client.setTemperature(this.zone, { hsp: tempF, csp });
+      } else if (mode === LENNOX_HVAC_COOL) {
+        // Ensure heating setpoint stays below cooling setpoint
+        let hsp = this.zone.hsp;
+        if (hsp > tempF - 3) {
+          hsp = tempF - 3;
+        }
+        await this.platform.client.setTemperature(this.zone, { hsp, csp: tempF });
+      }
+    } catch (error) {
+      this.platform.log.error(`Failed to set temperature: ${error}`);
+      throw error;
     }
   }
 
-  async handleCurrentRelativeHumidityGet(): Promise<number | any> {
+  /**
+   * Get temperature display units
+   */
+  async getTemperatureDisplayUnits(): Promise<CharacteristicValue> {
+    return this.platform.temperatureUnit;
+  }
+
+  /**
+   * Get heating threshold temperature (for auto mode)
+   */
+  async getHeatingThresholdTemperature(): Promise<CharacteristicValue> {
+    const tempC = this.toCelsius(this.zone.hsp);
+    this.logDebug(`Heating threshold: ${this.zone.hsp}°F (${tempC}°C)`);
+    return tempC;
+  }
+
+  /**
+   * Set heating threshold temperature
+   */
+  async setHeatingThresholdTemperature(value: CharacteristicValue): Promise<void> {
+    const tempC = value as number;
+    const tempF = this.toFahrenheit(tempC);
+    this.logInfo(`Setting heating threshold to ${tempF}°F (${tempC}°C)`);
+
     try {
-      const thermostat = await this._fetchThermostatInfo();
+      // Ensure cooling setpoint stays above heating setpoint
+      let csp = this.zone.csp;
+      if (csp < tempF + 3) {
+        csp = tempF + 3;
+        this.logInfo(`Adjusting cooling threshold to ${csp}°F to maintain 3° deadband`);
 
-      const humidity = thermostat.Indoor_Humidity;
-      this._logInfo(`Current relative humidity: ${humidity}%`);
+        // Update the cooling threshold characteristic
+        this.service.updateCharacteristic(
+          this.platform.Characteristic.CoolingThresholdTemperature,
+          this.toCelsius(csp),
+        );
+      }
 
-      return humidity;
-    } catch (e) {
-      return e;
+      // Mark command time for debounce
+      this.lastCommandTime = Date.now();
+      
+      await this.platform.client.setTemperature(this.zone, { hsp: tempF, csp });
+    } catch (error) {
+      this.platform.log.error(`Failed to set heating threshold: ${error}`);
+      throw error;
     }
   }
 
-}
+  /**
+   * Get cooling threshold temperature (for auto mode)
+   */
+  async getCoolingThresholdTemperature(): Promise<CharacteristicValue> {
+    const tempC = this.toCelsius(this.zone.csp);
+    this.logDebug(`Cooling threshold: ${this.zone.csp}°F (${tempC}°C)`);
+    return tempC;
+  }
 
-function cToF(celsius: number): number {
-  return Math.round((celsius * 9) / 5 + 32);
-}
+  /**
+   * Set cooling threshold temperature
+   */
+  async setCoolingThresholdTemperature(value: CharacteristicValue): Promise<void> {
+    const tempC = value as number;
+    const tempF = this.toFahrenheit(tempC);
+    this.logInfo(`Setting cooling threshold to ${tempF}°F (${tempC}°C)`);
 
-// function to convert Farenheit to Celcius
-function fToC(fahrenheit: number): string {
-  return (((fahrenheit - 32) * 5) / 9).toFixed(2);
+    try {
+      // Ensure heating setpoint stays below cooling setpoint
+      let hsp = this.zone.hsp;
+      if (hsp > tempF - 3) {
+        hsp = tempF - 3;
+        this.logInfo(`Adjusting heating threshold to ${hsp}°F to maintain 3° deadband`);
+
+        // Update the heating threshold characteristic
+        this.service.updateCharacteristic(
+          this.platform.Characteristic.HeatingThresholdTemperature,
+          this.toCelsius(hsp),
+        );
+      }
+
+      // Mark command time for debounce
+      this.lastCommandTime = Date.now();
+
+      await this.platform.client.setTemperature(this.zone, { hsp, csp: tempF });
+    } catch (error) {
+      this.platform.log.error(`Failed to set cooling threshold: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Get current relative humidity
+   */
+  async getCurrentRelativeHumidity(): Promise<CharacteristicValue> {
+    if (this.zone.humidityStatus !== LENNOX_STATUS_GOOD) {
+      this.platform.log.warn(`Zone ${this.displayName} has bad humidity status: ${this.zone.humidityStatus}`);
+    }
+
+    const humidity = this.zone.humidity ?? 50;
+    this.logDebug(`Current humidity: ${humidity}%`);
+    return humidity;
+  }
 }
