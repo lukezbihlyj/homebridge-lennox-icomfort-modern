@@ -64,4 +64,3 @@ export interface iComfort {
   validateUser: (params: RequestParams) => Promise<ValidateUserResponse>;
   setThermostatInfo: (settings: ThermostatInfo) => Promise<number>;
 }
-

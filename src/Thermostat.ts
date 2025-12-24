@@ -1,6 +1,6 @@
 import { Service, PlatformAccessory } from 'homebridge';
 
-import { LennoxIComfortPlatform } from './platform';
+import { LennoxIComfortModernPlatform } from './platform';
 import { TemperatureUnits } from './types/config';
 import { ThermostatInfo, UpdateThresholdRequest, ValidHeatCoolSetPointState } from './types/iComfortTypes';
 
@@ -26,7 +26,7 @@ export class Thermostat {
 
 
   constructor(
-    private readonly platform: LennoxIComfortPlatform,
+    private readonly platform: LennoxIComfortModernPlatform,
     private readonly accessory: PlatformAccessory,
   ) {
 

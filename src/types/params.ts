@@ -4,7 +4,6 @@ export enum TemperatureUnits {
 }
 
 export type RequestParams = {
-
     CANCEL_AWAY_FLAG?: number;
     GatewaySN?: string;
     LANGUAGE_NBR?: string;
