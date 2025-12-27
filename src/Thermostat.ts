@@ -8,6 +8,7 @@ import {
   LENNOX_HVAC_HEAT,
   LENNOX_HVAC_COOL,
   LENNOX_HVAC_HEAT_COOL,
+  LENNOX_HVAC_EMERGENCY_HEAT,
   LENNOX_TO_HOMEKIT_MODE,
   HOMEKIT_TO_LENNOX_MODE,
   TEMP_OPERATION_TO_HOMEKIT,
@@ -20,6 +21,7 @@ import {
  */
 export class Thermostat {
   private service: Service;
+  private emergencyHeatSwitch: Service | null = null;
 
   // References to system and zone
   private system: LennoxSystem;
@@ -54,6 +56,9 @@ export class Thermostat {
 
     // Configure characteristics
     this.setupCharacteristics();
+
+    // Setup emergency heat switch if available
+    this.setupEmergencyHeatSwitch();
   }
 
   /**
@@ -131,6 +136,70 @@ export class Thermostat {
   }
 
   /**
+   * Setup emergency heat switch if enabled in config and zone supports it
+   */
+  private setupEmergencyHeatSwitch(): void {
+    const switchName = `${this.displayName} Emergency Heat`;
+
+    // Check if emergency heat is enabled in config AND the zone supports it
+    if (this.platform.enableEmergencyHeat && this.zone.emergencyHeatingOption) {
+      this.logInfo('Emergency heat option available, creating switch');
+
+      // Get or create the emergency heat switch service
+      this.emergencyHeatSwitch = this.accessory.getService(switchName)
+        || this.accessory.addService(this.platform.Service.Switch, switchName, 'emergency-heat');
+
+      this.emergencyHeatSwitch.setCharacteristic(this.platform.Characteristic.Name, switchName);
+
+      // Configure the switch
+      this.emergencyHeatSwitch.getCharacteristic(this.platform.Characteristic.On)
+        .onGet(this.getEmergencyHeatState.bind(this))
+        .onSet(this.setEmergencyHeatState.bind(this));
+    } else {
+      // Remove the switch if it exists but emergency heat is not enabled/available
+      const existingSwitch = this.accessory.getService(switchName);
+      if (existingSwitch) {
+        this.logInfo('Emergency heat switch disabled or not available, removing');
+        this.accessory.removeService(existingSwitch);
+      }
+      this.emergencyHeatSwitch = null;
+    }
+  }
+
+  /**
+   * Get emergency heat switch state
+   */
+  async getEmergencyHeatState(): Promise<CharacteristicValue> {
+    const isEmergencyHeat = this.zone.systemMode === LENNOX_HVAC_EMERGENCY_HEAT;
+    this.logDebug(`Emergency heat state: ${isEmergencyHeat}`);
+    return isEmergencyHeat;
+  }
+
+  /**
+   * Set emergency heat switch state
+   */
+  async setEmergencyHeatState(value: CharacteristicValue): Promise<void> {
+    const enable = value as boolean;
+    this.logInfo(`Setting emergency heat to ${enable ? 'ON' : 'OFF'}`);
+
+    try {
+      // Mark command time for debounce
+      this.lastCommandTime = Date.now();
+
+      if (enable) {
+        // Turn on emergency heat
+        await this.platform.client.setHVACMode(this.zone, LENNOX_HVAC_EMERGENCY_HEAT);
+      } else {
+        // Turn off emergency heat - switch to regular heat mode
+        await this.platform.client.setHVACMode(this.zone, LENNOX_HVAC_HEAT);
+      }
+    } catch (error) {
+      this.platform.log.error(`Failed to set emergency heat: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
    * Update from zone data (called when API receives updates)
    */
   updateFromZone(zone: LennoxZone): void {
@@ -178,6 +247,14 @@ export class Thermostat {
       this.service.updateCharacteristic(
         this.platform.Characteristic.TargetTemperature,
         this.getActiveTargetTemperatureCelsius(),
+      );
+    }
+
+    // Update emergency heat switch if present
+    if (this.emergencyHeatSwitch) {
+      this.emergencyHeatSwitch.updateCharacteristic(
+        this.platform.Characteristic.On,
+        zone.systemMode === LENNOX_HVAC_EMERGENCY_HEAT,
       );
     }
   }

@@ -46,6 +46,7 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   password: string;
   pollInterval: number;
   debug: boolean;
+  enableEmergencyHeat: boolean;
 
   // Lennox S30 API client
   public client: LennoxS30Client;
@@ -69,6 +70,7 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
     this.password = config.password;
     this.pollInterval = config.pollInterval || 10;
     this.debug = config.debugmode || false;
+    this.enableEmergencyHeat = config.enableEmergencyHeat || false;
 
     // Temperature unit: will be set from config or auto-detected from thermostat
     this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;

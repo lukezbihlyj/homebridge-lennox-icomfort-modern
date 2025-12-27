@@ -55,6 +55,12 @@
           { "title": "Fahrenheit", "enum": ["F"] }
         ],
         "description": "Temperature display preference. 'Auto' uses whatever your thermostat is set to."
+      },
+      "enableEmergencyHeat": {
+        "title": "Enable Emergency Heat Switch",
+        "type": "boolean",
+        "default": false,
+        "description": "For dual-fuel systems, adds a switch accessory to enable emergency heat only mode."
       }
     },
     "required": [
@@ -79,6 +85,7 @@
         "name",
         "pollInterval",
         "temperatureUnit",
+        "enableEmergencyHeat",
         "debugmode"
       ]
     },

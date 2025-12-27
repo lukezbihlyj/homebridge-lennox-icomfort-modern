@@ -1,6 +1,6 @@
 {
   "name": "homebridge-lennox-icomfort-modern",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "displayName": "Homebridge Lennox iComfort Modern",
   "description": "Integrates Lennox iComfort S30, S40, E30 and M30 systems with Homebridge via the cloud API.",
   "author": "Luke Zbihlyj",

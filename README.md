@@ -28,6 +28,7 @@ This plugin supports the newer Lennox iComfort systems that use the **lennoxicom
 - **Auto Mode Thresholds** - Independent heating and cooling thresholds for Auto mode
 - **Multi-Zone Support** - Each zone appears as a separate thermostat accessory
 - **Automatic Deadband** - Maintains 3°F separation between heating and cooling setpoints
+- **Emergency Heat Switch** - For dual-fuel systems, an optional switch to enable emergency heat only mode
 
 ## Installation
 
@@ -69,6 +70,7 @@ Add the platform to your Homebridge `config.json`:
 | `name` | No | "Lennox iComfort" | Platform name shown in logs |
 | `pollInterval` | No | 10 | How often to poll for updates (seconds) |
 | `temperatureUnit` | No | "auto" | Temperature display: "auto", "C", or "F" |
+| `enableEmergencyHeat` | No | false | Enable emergency heat switch for dual-fuel systems |
 
 ## Running as a Child Bridge
 
