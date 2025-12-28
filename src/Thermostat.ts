@@ -16,7 +16,7 @@ import {
 
 /**
  * Thermostat accessory for a Lennox zone
- * Works with both Wifi and S30/E30/M30 thermostats
+ * Works with both Wifi and S30/S40/E30/M30 thermostats
  */
 export class Thermostat {
   private service: Service;

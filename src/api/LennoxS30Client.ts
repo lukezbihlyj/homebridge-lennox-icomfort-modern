@@ -1,5 +1,5 @@
 /**
- * Lennox S30/E30/M30 Cloud API Client
+ * Lennox S30/S40/E30/M30 Cloud API Client
  * Implements authentication, message pump, and zone control
  */
 

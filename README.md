@@ -21,7 +21,7 @@ A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermosta
 
 ## Features
 
-| Feature | Wifi | S30/E30/M30 |
+| Feature | Wifi | S30/S40/E30/M30 |
 |---------|------|-------------|
 | Current Temperature | ✅ | ✅ |
 | Current Humidity | ✅ | ✅ |
@@ -38,7 +38,7 @@ A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermosta
 
 1. Search for `lennox-icomfort-modern` in the Homebridge UI plugin search
 2. Click Install
-3. Select your device type (Wifi or S30/E30/M30)
+3. Select your device type (Wifi or S30/S40/E30/M30)
 4. Configure with your iComfort account credentials
 
 ### Via Command Line
@@ -106,7 +106,7 @@ This plugin is based on:
 - [homebridge-lennox-icomfort](https://github.com/akgoode/homebridge-lennox-icomfort) by akgoode - the original Homebridge plugin that served as the foundation for this project
 - [icomfort](https://www.npmjs.com/package/icomfort) - the npm package for the Wifi API
 - [lennoxs30api](https://github.com/PeteRager/lennoxs30api) by Pete Rager - the Python library for the modern Lennox cloud API
-- [Home Assistant Lennox S30 integration](https://github.com/PeteRager/lennoxs30) by Pete Rager - reference implementation for the S30/E30/M30 API
+- [Home Assistant Lennox S30 integration](https://github.com/PeteRager/lennoxs30) by Pete Rager - reference implementation for the S30/S40/E30/M30 API
 
 ## License
 

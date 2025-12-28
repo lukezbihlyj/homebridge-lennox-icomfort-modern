@@ -1,5 +1,5 @@
 /**
- * TypeScript interfaces for Lennox S30/E30/M30 Cloud API
+ * TypeScript interfaces for Lennox S30/S40/E30/M30 Cloud API
  * Based on the lennoxs30api Python library data structures
  */
 

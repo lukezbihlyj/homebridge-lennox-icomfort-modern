@@ -1,5 +1,5 @@
 /**
- * Constants for Lennox S30/E30/M30 Cloud API
+ * Constants for Lennox S30/S40/E30/M30 Cloud API
  */
 
 // ============================================================================

@@ -40,7 +40,7 @@ export type DeviceType = 'wifi' | 's30';
 /**
  * LennoxIComfortModernPlatform
  * Main platform plugin for Lennox iComfort thermostats
- * Supports both Wifi (older) and S30/E30/M30 (newer) models
+ * Supports both Wifi (older) and S30/S40/E30/M30 (newer) models
  */
 export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
@@ -76,6 +76,27 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
+    // Validate required configuration
+    if (!config.username || !config.password) {
+      this.log.warn('Missing required configuration: username and password are required');
+      this.log.warn('Please configure the plugin in the Homebridge UI');
+
+      // Set defaults to prevent crashes, but don't start
+      this.name = config.name;
+      this.username = '';
+      this.password = '';
+      this.pollInterval = 10;
+      this.debug = false;
+      this.enableEmergencyHeat = false;
+      this.deviceType = 's30';
+      this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+      this.temperatureUnitConfig = 'auto';
+
+      // Create a dummy client that won't connect
+      this.client = new LennoxS30Client({ email: '', password: '' }, this.log);
+      return;
+    }
+
     // Determine device type
     this.deviceType = (config.deviceType as DeviceType) || 's30';
     this.log.info(`Initializing Lennox iComfort platform (${this.deviceType}):`, this.config.name);
@@ -103,12 +124,11 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
         this.log,
       );
     } else {
-      this.log.info('Using Lennox S30/E30/M30 client (lennoxicomfort.com)');
+      this.log.info('Using Lennox S30/S40/E30/M30 client (lennoxicomfort.com)');
       this.s30Client = new LennoxS30Client(
         {
           email: this.username,
           password: this.password,
-          appId: config.appId,
           pollInterval: this.pollInterval,
         },
         this.log,

@@ -1,6 +1,6 @@
 /**
  * Lennox iComfort Cloud API
- * Supports both Wifi (older) and S30/E30/M30 (newer) models
+ * Supports both Wifi (older) and S30/S40/E30/M30 (newer) models
  */
 
 export * from './types';
