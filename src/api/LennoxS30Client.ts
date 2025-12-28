@@ -76,7 +76,7 @@ export class LennoxS30Client {
   public systems: Map<string, LennoxSystem> = new Map();
 
   // Callbacks for updates
-  private updateCallbacks: Array<(system: LennoxSystem, zone: LennoxZone) => void> = [];
+  private updateCallbacks: Array<(zone: LennoxZone) => void> = [];
 
   // Logger
   private log: Logger;
@@ -98,9 +98,27 @@ export class LennoxS30Client {
   }
 
   /**
+   * Get all active zones across all systems
+   * Returns zones with all system info populated
+   */
+  getZones(): LennoxZone[] {
+    const allZones: LennoxZone[] = [];
+    for (const system of this.systems.values()) {
+      for (const zone of system.getActiveZones()) {
+        // Ensure system info is copied to zone
+        zone.systemName = system.name;
+        zone.productType = system.productType;
+        zone.numberOfZones = system.numberOfZones;
+        allZones.push(zone);
+      }
+    }
+    return allZones;
+  }
+
+  /**
    * Register a callback for zone updates
    */
-  onUpdate(callback: (system: LennoxSystem, zone: LennoxZone) => void): void {
+  onUpdate(callback: (zone: LennoxZone) => void): void {
     this.updateCallbacks.push(callback);
   }
 
@@ -294,8 +312,6 @@ export class LennoxS30Client {
    * Connect to the Lennox cloud API (authenticate + login)
    */
   async serverConnect(): Promise<void> {
-    this.log.info('Connecting to Lennox cloud API...');
-
     // Step 1: Authenticate with certificate
     await this.authenticate();
 
@@ -556,11 +572,16 @@ export class LennoxS30Client {
       const zone = system.getOrCreateZone(zoneData.id);
       zone.updateFromData(zoneData);
 
+      // Copy system info to zone for interface compatibility
+      zone.systemName = system.name;
+      zone.productType = system.productType;
+      zone.numberOfZones = system.numberOfZones;
+
       // Notify callbacks of zone updates
       if (zone.isActive()) {
         for (const callback of this.updateCallbacks) {
           try {
-            callback(system, zone);
+            callback(zone);
           } catch (error) {
             this.log.error(`Update callback error: ${error}`);
           }
@@ -663,7 +684,7 @@ export class LennoxS30Client {
 
     // Build the period data with both F and C values
     const period: Record<string, unknown> = {};
-    
+
     if (options.hsp !== undefined) {
       period.hsp = Math.round(options.hsp);
       period.hspC = this.fToC(options.hsp);
@@ -732,7 +753,7 @@ export class LennoxS30Client {
     // Wait for zone configuration with timeout
     const maxWaitTime = 30000; // 30 seconds
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < maxWaitTime) {
       let allSystemsReady = true;
 
@@ -780,7 +801,7 @@ export class LennoxS30Client {
           consecutiveErrors = 0; // Reset on success
         } catch (error) {
           consecutiveErrors++;
-          
+
           if (error instanceof LennoxS30Error && error.errorCode === EC_UNAUTHORIZED) {
             // Token expired - need to reconnect
             this.log.warn('Token expired, reconnecting...');
@@ -811,7 +832,7 @@ export class LennoxS30Client {
             // Transient error - just log and continue
             this.log.debug(`Message pump error (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${error}`);
           }
-          
+
           if (onError && error instanceof Error) {
             onError(error);
           }

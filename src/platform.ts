@@ -13,9 +13,12 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { Thermostat } from './Thermostat';
 import {
   LennoxS30Client,
+  LennoxWifiClient,
   LennoxSystem,
   LennoxZone,
   LennoxS30Error,
+  ThermostatZone,
+  LennoxClient,
 } from './api';
 
 /**
@@ -30,8 +33,14 @@ export interface ZoneAccessoryContext {
 }
 
 /**
- * LennoxS30Platform
- * Main platform plugin for Lennox S30/E30/M30 thermostats
+ * Device type configuration
+ */
+export type DeviceType = 'wifi' | 's30';
+
+/**
+ * LennoxIComfortModernPlatform
+ * Main platform plugin for Lennox iComfort thermostats
+ * Supports both Wifi (older) and S30/E30/M30 (newer) models
  */
 export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
@@ -47,9 +56,13 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   pollInterval: number;
   debug: boolean;
   enableEmergencyHeat: boolean;
+  deviceType: DeviceType;
 
-  // Lennox S30 API client
-  public client: LennoxS30Client;
+  // Lennox API client (either S30 or Wifi)
+  public client: LennoxClient;
+
+  // S30-specific client reference (for S30-specific features)
+  private s30Client?: LennoxS30Client;
 
   // Temperature display unit preference
   temperatureUnit: number;
@@ -63,12 +76,14 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
-    this.log.info('Initializing Lennox S30 platform:', this.config.name);
+    // Determine device type
+    this.deviceType = (config.deviceType as DeviceType) || 's30';
+    this.log.info(`Initializing Lennox iComfort platform (${this.deviceType}):`, this.config.name);
 
     this.name = config.name;
     this.username = config.username;
     this.password = config.password;
-    this.pollInterval = config.pollInterval || 10;
+    this.pollInterval = config.pollInterval || (this.deviceType === 'wifi' ? 30 : 10);
     this.debug = config.debugmode || false;
     this.enableEmergencyHeat = config.enableEmergencyHeat || false;
 
@@ -76,16 +91,30 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
     this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
     this.temperatureUnitConfig = config.temperatureUnit || 'auto';
 
-    // Initialize the Lennox S30 API client
-    this.client = new LennoxS30Client(
-      {
-        email: this.username,
-        password: this.password,
-        appId: config.appId,
-        pollInterval: this.pollInterval,
-      },
-      this.log,
-    );
+    // Initialize the appropriate Lennox API client based on device type
+    if (this.deviceType === 'wifi') {
+      this.log.info('Using Lennox iComfort Wifi client (myicomfort.com)');
+      this.client = new LennoxWifiClient(
+        {
+          email: this.username,
+          password: this.password,
+          pollInterval: this.pollInterval,
+        },
+        this.log,
+      );
+    } else {
+      this.log.info('Using Lennox S30/E30/M30 client (lennoxicomfort.com)');
+      this.s30Client = new LennoxS30Client(
+        {
+          email: this.username,
+          password: this.password,
+          appId: config.appId,
+          pollInterval: this.pollInterval,
+        },
+        this.log,
+      );
+      this.client = this.s30Client;
+    }
 
     // Register for zone updates
     this.client.onUpdate(this.handleZoneUpdate.bind(this));
@@ -100,7 +129,7 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   /**
    * Handle zone updates from the API client
    */
-  private handleZoneUpdate(system: LennoxSystem, zone: LennoxZone): void {
+  private handleZoneUpdate(zone: ThermostatZone): void {
     const handler = this.thermostatHandlers.get(zone.uniqueId);
     if (handler) {
       handler.updateFromZone(zone);
@@ -121,7 +150,7 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   async discoverDevices(): Promise<void> {
     try {
       // Connect to Lennox cloud API
-      this.log.info('Connecting to Lennox S30 cloud...');
+      this.log.info(`Connecting to Lennox ${this.deviceType === 'wifi' ? 'iComfort Wifi' : 'S30'} cloud...`);
       await this.client.serverConnect();
 
       // Initialize and wait for zone data
@@ -133,35 +162,18 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
         this.log.error('Message pump error:', error.message);
       });
 
-      // Process discovered systems and zones
-      for (const system of this.client.systemList) {
-        this.log.info(`Processing system: ${system.name} (${system.sysId})`);
+      // Get all discovered zones
+      const zones = this.client.getZones();
+      this.log.info(`Found ${zones.length} zone(s)`);
 
-        // Set temperature unit based on config or system setting
-        if (this.temperatureUnitConfig === 'C') {
-          this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.CELSIUS;
-          this.log.info('Temperature unit set to Celsius (from config)');
-        } else if (this.temperatureUnitConfig === 'F') {
-          this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
-          this.log.info('Temperature unit set to Fahrenheit (from config)');
-        } else {
-          // Auto: use thermostat's setting
-          if (system.temperatureUnit === 'C') {
-            this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.CELSIUS;
-            this.log.info('Temperature unit set to Celsius (from thermostat)');
-          } else {
-            this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
-            this.log.info('Temperature unit set to Fahrenheit (from thermostat)');
-          }
-        }
+      // Set temperature unit from first zone or config
+      if (zones.length > 0) {
+        this.setTemperatureUnit(zones[0]);
+      }
 
-        // Register each active zone as a thermostat accessory
-        const activeZones = system.getActiveZones();
-        this.log.info(`Found ${activeZones.length} active zone(s) in system ${system.name}`);
-
-        for (const zone of activeZones) {
-          this.registerZoneAccessory(system, zone);
-        }
+      // Register each zone as a thermostat accessory
+      for (const zone of zones) {
+        this.registerZoneAccessory(zone);
       }
 
       // Remove any cached accessories that are no longer present
@@ -177,17 +189,35 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   }
 
   /**
+   * Set temperature unit based on config or zone settings
+   */
+  private setTemperatureUnit(zone: ThermostatZone): void {
+    if (this.temperatureUnitConfig === 'C') {
+      this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.CELSIUS;
+      this.log.info('Temperature unit set to Celsius (from config)');
+    } else if (this.temperatureUnitConfig === 'F') {
+      this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+      this.log.info('Temperature unit set to Fahrenheit (from config)');
+    } else {
+      // Auto: default to Fahrenheit (Wifi doesn't provide system temp unit easily)
+      // S30 will have system.temperatureUnit but we don't have easy access here
+      this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+      this.log.info('Temperature unit set to Fahrenheit (default)');
+    }
+  }
+
+  /**
    * Register a zone as a thermostat accessory
    */
-  private registerZoneAccessory(system: LennoxSystem, zone: LennoxZone): void {
+  private registerZoneAccessory(zone: ThermostatZone): void {
     // Generate unique ID for this zone
     const uniqueId = this.debug ? `dev_${zone.uniqueId}` : zone.uniqueId;
     const uuid = this.api.hap.uuid.generate(uniqueId);
 
-    // Build display name: "System Name - Zone Name" or just zone name if only one zone
-    const displayName = system.numberOfZones > 1
-      ? `${system.name} - ${zone.name}`
-      : system.name;
+    // Build display name: "System Name - Zone Name" or just system name if only one zone
+    const displayName = zone.numberOfZones > 1
+      ? `${zone.systemName} - ${zone.name}`
+      : zone.systemName;
 
     // Check if accessory already exists
     const existingAccessory = this.accessories.find(acc => acc.UUID === uuid);
@@ -197,17 +227,17 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
 
       // Update context with latest info
       existingAccessory.context = {
-        systemId: system.sysId,
+        systemId: zone.systemId,
         zoneId: zone.id,
-        systemName: system.name,
+        systemName: zone.systemName,
         zoneName: zone.name,
-        productType: system.productType,
+        productType: zone.productType,
       } as ZoneAccessoryContext;
 
       this.api.updatePlatformAccessories([existingAccessory]);
 
       // Create thermostat handler
-      const handler = new Thermostat(this, existingAccessory, system, zone);
+      const handler = new Thermostat(this, existingAccessory, zone);
       this.thermostatHandlers.set(zone.uniqueId, handler);
 
     } else {
@@ -218,15 +248,15 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
 
       // Store context
       accessory.context = {
-        systemId: system.sysId,
+        systemId: zone.systemId,
         zoneId: zone.id,
-        systemName: system.name,
+        systemName: zone.systemName,
         zoneName: zone.name,
-        productType: system.productType,
+        productType: zone.productType,
       } as ZoneAccessoryContext;
 
       // Create thermostat handler
-      const handler = new Thermostat(this, accessory, system, zone);
+      const handler = new Thermostat(this, accessory, zone);
       this.thermostatHandlers.set(zone.uniqueId, handler);
 
       // Register with Homebridge
@@ -240,11 +270,9 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   private cleanupStaleAccessories(): void {
     // Build set of current zone unique IDs
     const currentZoneIds = new Set<string>();
-    for (const system of this.client.systemList) {
-      for (const zone of system.getActiveZones()) {
-        const uniqueId = this.debug ? `dev_${zone.uniqueId}` : zone.uniqueId;
-        currentZoneIds.add(this.api.hap.uuid.generate(uniqueId));
-      }
+    for (const zone of this.client.getZones()) {
+      const uniqueId = this.debug ? `dev_${zone.uniqueId}` : zone.uniqueId;
+      currentZoneIds.add(this.api.hap.uuid.generate(uniqueId));
     }
 
     // Find and remove stale accessories

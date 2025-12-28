@@ -2,8 +2,7 @@ import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
 
 import { LennoxIComfortModernPlatform } from './platform';
 import {
-  LennoxSystem,
-  LennoxZone,
+  ThermostatZone,
   LENNOX_HVAC_OFF,
   LENNOX_HVAC_HEAT,
   LENNOX_HVAC_COOL,
@@ -13,19 +12,18 @@ import {
   HOMEKIT_TO_LENNOX_MODE,
   TEMP_OPERATION_TO_HOMEKIT,
   HomekitHeatingCoolingState,
-  LENNOX_STATUS_GOOD,
 } from './api';
 
 /**
  * Thermostat accessory for a Lennox zone
+ * Works with both Wifi and S30/E30/M30 thermostats
  */
 export class Thermostat {
   private service: Service;
   private emergencyHeatSwitch: Service | null = null;
 
-  // References to system and zone
-  private system: LennoxSystem;
-  private zone: LennoxZone;
+  // Reference to zone data
+  private zone: ThermostatZone;
 
   // Debounce: ignore updates for a short time after sending a command
   private lastCommandTime = 0;
@@ -34,18 +32,16 @@ export class Thermostat {
   constructor(
     private readonly platform: LennoxIComfortModernPlatform,
     private readonly accessory: PlatformAccessory,
-    system: LennoxSystem,
-    zone: LennoxZone,
+    zone: ThermostatZone,
   ) {
-    this.system = system;
     this.zone = zone;
 
     // Set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Name, this.displayName)
       .setCharacteristic(this.platform.Characteristic.SerialNumber, zone.uniqueId)
-      .setCharacteristic(this.platform.Characteristic.FirmwareRevision, '1.0')
-      .setCharacteristic(this.platform.Characteristic.Model, system.productType)
+      .setCharacteristic(this.platform.Characteristic.FirmwareRevision, zone.firmwareVersion)
+      .setCharacteristic(this.platform.Characteristic.Model, zone.productType)
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Lennox');
 
     // Get or create thermostat service
@@ -67,10 +63,10 @@ export class Thermostat {
   private get displayName(): string {
     let baseName: string;
 
-    if (this.system.numberOfZones > 1) {
-      baseName = `${this.system.name} - ${this.zone.name}`;
+    if (this.zone.numberOfZones > 1) {
+      baseName = `${this.zone.systemName} - ${this.zone.name}`;
     } else {
-      baseName = this.system.name;
+      baseName = this.zone.systemName;
     }
 
     // Add "Thermostat" suffix if not already present
@@ -202,7 +198,7 @@ export class Thermostat {
   /**
    * Update from zone data (called when API receives updates)
    */
-  updateFromZone(zone: LennoxZone): void {
+  updateFromZone(zone: ThermostatZone): void {
     this.zone = zone;
 
     // Ignore updates during debounce period after sending a command
@@ -371,10 +367,6 @@ export class Thermostat {
    * Get current temperature in Celsius
    */
   async getCurrentTemperature(): Promise<CharacteristicValue> {
-    if (this.zone.temperatureStatus !== LENNOX_STATUS_GOOD) {
-      this.platform.log.warn(`Zone ${this.displayName} has bad temperature status: ${this.zone.temperatureStatus}`);
-    }
-
     const tempF = this.zone.temperature ?? 70;
     const tempC = this.toCelsius(tempF);
     this.logDebug(`Current temperature: ${tempF}°F (${tempC}°C)`);
@@ -528,10 +520,6 @@ export class Thermostat {
    * Get current relative humidity
    */
   async getCurrentRelativeHumidity(): Promise<CharacteristicValue> {
-    if (this.zone.humidityStatus !== LENNOX_STATUS_GOOD) {
-      this.platform.log.warn(`Zone ${this.displayName} has bad humidity status: ${this.zone.humidityStatus}`);
-    }
-
     const humidity = this.zone.humidity ?? 50;
     this.logDebug(`Current humidity: ${humidity}%`);
     return humidity;

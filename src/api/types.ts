@@ -284,6 +284,12 @@ export class LennoxZone {
   public name: string;
   public systemId: string;
 
+  // System info (populated by client)
+  public systemName: string = '';
+  public productType: string = 'S30';
+  public firmwareVersion: string = '1.0';
+  public numberOfZones: number = 1;
+
   // Configuration
   public heatingOption: boolean = false;
   public coolingOption: boolean = false;

@@ -2,8 +2,8 @@
   "pluginAlias": "LennoxIComfortModern",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Lennox S30/E30/M30 thermostat integration via cloud API. Use your myicomfort.com credentials.",
-  "footerDisplay": "For multi-zone systems, each zone will appear as a separate thermostat in HomeKit.",
+  "headerDisplay": "Lennox iComfort thermostat integration supporting both older Wifi models and newer S30/S40/E30/M30 systems.",
+  "footerDisplay": "For multi-zone systems (S30/E30/M30 only), each zone will appear as a separate thermostat in HomeKit.",
   "schema": {
     "type": "object",
     "properties": {
@@ -13,18 +13,28 @@
         "default": "Lennox iComfort",
         "description": "The name that will appear in the Homebridge log."
       },
+      "deviceType": {
+        "title": "Device Type",
+        "type": "string",
+        "default": "s30",
+        "oneOf": [
+          { "title": "Lennox iComfort S30/S40/E30/M30", "enum": ["s30"] },
+          { "title": "Lennox iComfort Wifi", "enum": ["wifi"] }
+        ],
+        "description": "Select your thermostat model: S30/S40/E30/M30 use lennoxicomfort.com, older Wifi models use myicomfort.com"
+      },
       "username": {
         "title": "Email",
         "type": "string",
         "format": "email",
         "required": true,
-        "description": "Your myicomfort.com account email address."
+        "description": "Your iComfort account email address."
       },
       "password": {
         "title": "Password",
         "type": "string",
         "required": true,
-        "description": "Your myicomfort.com account password."
+        "description": "Your iComfort account password."
       },
       "pollInterval": {
         "title": "Poll Interval (seconds)",
@@ -37,13 +47,13 @@
       "appId": {
         "title": "Application ID",
         "type": "string",
-        "description": "Custom application ID for API authentication. Leave blank to use the default."
+        "description": "(S30/E30/M30 only) Custom application ID for API authentication. Leave blank to use the default."
       },
       "debugmode": {
         "title": "Debug Mode",
         "type": "boolean",
         "default": false,
-        "description": "Enable debug logging and use test device IDs."
+        "description": "Enable debug logging."
       },
       "temperatureUnit": {
         "title": "Temperature Display Unit",
@@ -60,7 +70,7 @@
         "title": "Enable Emergency Heat Switch",
         "type": "boolean",
         "default": false,
-        "description": "For dual-fuel systems, adds a switch accessory to enable emergency heat only mode."
+        "description": "(S30/S40/E30/M30 only) For dual-fuel systems, adds a switch accessory to enable emergency heat only mode."
       }
     },
     "required": [
@@ -69,6 +79,20 @@
     ]
   },
   "layout": [
+    {
+      "type": "fieldset",
+      "title": "Device Selection",
+      "items": [
+        {
+          "key": "deviceType",
+          "type": "radios-inline",
+          "titleMap": [
+            { "value": "wifi", "name": "iComfort Wifi" },
+            { "value": "s30", "name": "S30 / S40 / E30 / M30" }
+          ]
+        }
+      ]
+    },
     {
       "type": "fieldset",
       "title": "Account Credentials",
@@ -85,7 +109,10 @@
         "name",
         "pollInterval",
         "temperatureUnit",
-        "enableEmergencyHeat",
+        {
+          "key": "enableEmergencyHeat",
+          "condition": { "deviceType": "s30" }
+        },
         "debugmode"
       ]
     },
@@ -94,7 +121,10 @@
       "title": "Advanced",
       "expandable": true,
       "items": [
-        "appId"
+        {
+          "key": "appId",
+          "condition": { "deviceType": "s30" }
+        }
       ]
     }
   ]
