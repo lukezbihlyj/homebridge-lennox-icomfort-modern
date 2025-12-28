@@ -6,7 +6,7 @@
 
 # Homebridge Lennox iComfort
 
-A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermostats. Supports both older iComfort Wifi models and newer S30/S40/E30/M30 systems.
+A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermostats. Supports S30/S40/E30/M30 systems and older iComfort Wifi models.
 
 ## Supported Devices
 
@@ -21,8 +21,8 @@ A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermosta
 
 ## Features
 
-| Feature | Wifi | S30/S40/E30/M30 |
-|---------|------|-------------|
+| Feature | S30/S40/E30/M30 | Wifi |
+|---------|-----------------|------|
 | Current Temperature | ✅ | ✅ |
 | Current Humidity | ✅ | ✅ |
 | HVAC Mode Control (Off/Heat/Cool/Auto) | ✅ | ✅ |
@@ -30,7 +30,7 @@ A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermosta
 | Auto Mode Thresholds | ✅ | ✅ |
 | Automatic 3°F Deadband | ✅ | ✅ |
 | Multi-Zone Support | ✅ | ✅ |
-| Emergency Heat Switch | ❌ | ✅ |
+| Emergency Heat Switch | ✅ | ❌ |
 
 ## Installation
 
@@ -87,7 +87,7 @@ Add the platform to your Homebridge `config.json`:
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `deviceType` | No | "s30" | Device type: "wifi" or "s30" |
+| `deviceType` | No | "s30" | Device type: "s30" or "wifi" |
 | `username` | Yes | - | Your iComfort account email address |
 | `password` | Yes | - | Your iComfort account password |
 | `name` | No | "Lennox iComfort" | Platform name shown in logs |

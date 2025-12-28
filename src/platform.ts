@@ -35,7 +35,7 @@ export interface ZoneAccessoryContext {
 /**
  * Device type configuration
  */
-export type DeviceType = 'wifi' | 's30';
+export type DeviceType = 's30' | 'wifi';
 
 /**
  * LennoxIComfortModernPlatform

@@ -2,7 +2,7 @@
   "pluginAlias": "LennoxIComfortModern",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Lennox iComfort thermostat integration supporting both older Wifi models and newer S30/S40/E30/M30 systems.",
+  "headerDisplay": "Lennox iComfort thermostat integration supporting S30/S40/E30/M30 systems and older Wifi models.",
   "footerDisplay": "For multi-zone systems (S30/S40/E30/M30 only), each zone will appear as a separate thermostat in HomeKit.",
   "schema": {
     "type": "object",
@@ -82,8 +82,8 @@
           "key": "deviceType",
           "type": "radios-inline",
           "titleMap": [
-            { "value": "wifi", "name": "iComfort Wifi" },
-            { "value": "s30", "name": "S30 / S40 / E30 / M30" }
+            { "value": "s30", "name": "S30 / S40 / E30 / M30" },
+            { "value": "wifi", "name": "iComfort Wifi" }
           ]
         }
       ]
