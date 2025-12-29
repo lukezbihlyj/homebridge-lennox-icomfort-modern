@@ -28,7 +28,6 @@ A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermosta
 | HVAC Mode Control (Off/Heat/Cool/Auto) | ✅ | ✅ |
 | Temperature Setpoints | ✅ | ✅ |
 | Auto Mode Thresholds | ✅ | ✅ |
-| Automatic 3°F Deadband | ✅ | ✅ |
 | Multi-Zone Support | ✅ | ✅ |
 | Emergency Heat Switch | ✅ | ❌ |
 
@@ -36,7 +35,7 @@ A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermosta
 
 ### Via Homebridge UI (Recommended)
 
-1. Search for `lennox-icomfort-modern` in the Homebridge UI plugin search
+1. Search for `homebridge-lennox-icomfort-modern` in the Homebridge UI plugin search
 2. Click Install
 3. Select your device type (S30/S40/E30/M30 or Wifi)
 4. Configure with your iComfort account credentials
