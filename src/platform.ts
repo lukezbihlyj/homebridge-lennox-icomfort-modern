@@ -14,8 +14,6 @@ import { Thermostat } from './Thermostat';
 import {
   LennoxS30Client,
   LennoxWifiClient,
-  LennoxSystem,
-  LennoxZone,
   LennoxS30Error,
   ThermostatZone,
   LennoxClient,
@@ -188,7 +186,7 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
 
       // Set temperature unit from first zone or config
       if (zones.length > 0) {
-        this.setTemperatureUnit(zones[0]);
+        this.setTemperatureUnit();
       }
 
       // Register each zone as a thermostat accessory
@@ -209,9 +207,9 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * Set temperature unit based on config or zone settings
+   * Set temperature unit based on config
    */
-  private setTemperatureUnit(zone: ThermostatZone): void {
+  private setTemperatureUnit(): void {
     if (this.temperatureUnitConfig === 'C') {
       this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.CELSIUS;
       this.log.info('Temperature unit set to Celsius (from config)');
@@ -219,8 +217,7 @@ export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
       this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
       this.log.info('Temperature unit set to Fahrenheit (from config)');
     } else {
-      // Auto: default to Fahrenheit (Wifi doesn't provide system temp unit easily)
-      // S30 will have system.temperatureUnit but we don't have easy access here
+      // Auto: default to Fahrenheit
       this.temperatureUnit = this.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
       this.log.info('Temperature unit set to Fahrenheit (default)');
     }
