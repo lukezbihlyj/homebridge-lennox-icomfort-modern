@@ -1,6 +1,6 @@
 {
   "name": "homebridge-lennox-icomfort-modern",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "displayName": "Homebridge Lennox iComfort Modern",
   "description": "Homebridge plugin for Lennox iComfort thermostats - supports S30, S40, E30, M30 and older Wifi models via cloud API.",
   "author": "Luke Zbihlyj",
