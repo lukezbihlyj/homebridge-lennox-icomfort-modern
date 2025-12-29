@@ -3,7 +3,15 @@
  * Implemented by both LennoxS30Client and LennoxWifiClient
  */
 
-import { Logger } from './LennoxS30Client';
+/**
+ * Logger interface for compatibility with Homebridge
+ */
+export interface Logger {
+  info(message: string, ...parameters: unknown[]): void;
+  warn(message: string, ...parameters: unknown[]): void;
+  error(message: string, ...parameters: unknown[]): void;
+  debug(message: string, ...parameters: unknown[]): void;
+}
 
 /**
  * Represents a thermostat zone that can be controlled

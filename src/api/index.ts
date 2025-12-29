@@ -3,9 +3,9 @@
  * Supports S30/S40/E30/M30 (newer) and Wifi (older) models
  */
 
-export * from './types';
 export * from './constants';
 export * from './LennoxClientInterface';
-export * from './LennoxS30Client';
-export * from './LennoxWifiClient';
-
+export * from './s30/types';
+export * from './s30/LennoxS30Client';
+export * from './wifi/types';
+export * from './wifi/LennoxWifiClient';

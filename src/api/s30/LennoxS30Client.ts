@@ -13,6 +13,8 @@ import {
   MessageData,
 } from './types';
 
+import { Logger } from '../LennoxClientInterface';
+
 import {
   CLOUD_AUTHENTICATE_URL,
   CLOUD_LOGIN_URL,
@@ -22,15 +24,13 @@ import {
   CERTIFICATE,
   USER_AGENT,
   LENNOX_DEFAULT_CLOUD_APP_ID,
-  DEFAULT_POLL_INTERVAL,
+  DEFAULT_S30_POLL_INTERVAL,
   DEFAULT_TIMEOUT,
   TOKEN_REFRESH_BUFFER,
   EC_AUTHENTICATE,
   EC_LOGIN,
   EC_UNAUTHORIZED,
-  EC_HTTP_ERR,
   EC_COMMS_ERROR,
-  MESSAGE_TYPE_PROPERTY_CHANGE,
 } from './constants';
 
 /**
@@ -45,16 +45,6 @@ export class LennoxS30Error extends Error {
     super(message);
     this.name = 'LennoxS30Error';
   }
-}
-
-/**
- * Logger interface for compatibility with Homebridge
- */
-export interface Logger {
-  info(message: string, ...parameters: unknown[]): void;
-  warn(message: string, ...parameters: unknown[]): void;
-  error(message: string, ...parameters: unknown[]): void;
-  debug(message: string, ...parameters: unknown[]): void;
 }
 
 /**
@@ -85,7 +75,7 @@ export class LennoxS30Client {
     this.email = config.email;
     this.password = config.password;
     this.appId = config.appId || LENNOX_DEFAULT_CLOUD_APP_ID;
-    this.pollInterval = (config.pollInterval || DEFAULT_POLL_INTERVAL) * 1000;
+    this.pollInterval = (config.pollInterval || DEFAULT_S30_POLL_INTERVAL) * 1000;
     this.timeout = DEFAULT_TIMEOUT;
     this.log = log;
   }
@@ -857,3 +847,4 @@ export class LennoxS30Client {
     this.systems.clear();
   }
 }
+
