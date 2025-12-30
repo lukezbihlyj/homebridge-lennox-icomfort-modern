@@ -1,9 +1,9 @@
 /**
  * This is the name of the platform that users will use to register the plugin in the Homebridge config.json
  */
-export const PLATFORM_NAME = 'LennoxIComfortModern';
+export const PLATFORM_NAME = 'LennoxIComfortCloud';
 
 /**
  * This must match the name of your plugin as defined the package.json
  */
-export const PLUGIN_NAME = 'homebridge-lennox-icomfort-modern';
+export const PLUGIN_NAME = 'homebridge-lennox-icomfort-cloud';

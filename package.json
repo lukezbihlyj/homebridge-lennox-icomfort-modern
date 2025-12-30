@@ -1,7 +1,7 @@
 {
-  "name": "homebridge-lennox-icomfort-modern",
+  "name": "homebridge-lennox-icomfort-cloud",
   "version": "1.1.1",
-  "displayName": "Homebridge Lennox iComfort Modern",
+  "displayName": "Homebridge Lennox iComfort Cloud",
   "description": "Homebridge plugin for Lennox iComfort thermostats - supports S30, S40, E30, M30 and older Wifi models via cloud API.",
   "author": "Luke Zbihlyj",
   "maintainers": [
@@ -10,10 +10,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lukezbihlyj/homebridge-lennox-icomfort-modern.git"
+    "url": "https://github.com/lukezbihlyj/homebridge-lennox-icomfort-cloud.git"
   },
   "bugs": {
-    "url": "https://github.com/lukezbihlyj/homebridge-lennox-icomfort-modern/issues"
+    "url": "https://github.com/lukezbihlyj/homebridge-lennox-icomfort-cloud/issues"
   },
   "engines": {
     "node": ">=18.0.0",

@@ -1,11 +1,11 @@
 import { API } from 'homebridge';
 
 import { PLATFORM_NAME } from './settings';
-import { LennoxIComfortModernPlatform } from './platform';
+import { LennoxIComfortCloudPlatform } from './platform';
 
 /**
  * This method registers the platform with Homebridge
  */
 export = (api: API) => {
-  api.registerPlatform(PLATFORM_NAME, LennoxIComfortModernPlatform);
+  api.registerPlatform(PLATFORM_NAME, LennoxIComfortCloudPlatform);
 };

@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "LennoxIComfortModern",
+  "pluginAlias": "LennoxIComfortCloud",
   "pluginType": "platform",
   "singular": true,
   "headerDisplay": "Lennox iComfort thermostat integration supporting S30/S40/E30/M30 systems and older Wifi models.",

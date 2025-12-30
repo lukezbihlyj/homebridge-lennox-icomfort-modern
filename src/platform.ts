@@ -36,11 +36,11 @@ export interface ZoneAccessoryContext {
 export type DeviceType = 's30' | 'wifi';
 
 /**
- * LennoxIComfortModernPlatform
+ * LennoxIComfortCloudPlatform
  * Main platform plugin for Lennox iComfort thermostats
  * Supports both Wifi (older) and S30/S40/E30/M30 (newer) models
  */
-export class LennoxIComfortModernPlatform implements DynamicPlatformPlugin {
+export class LennoxIComfortCloudPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
 

@@ -1,6 +1,6 @@
 import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
 
-import { LennoxIComfortModernPlatform } from './platform';
+import { LennoxIComfortCloudPlatform } from './platform';
 import {
   ThermostatZone,
   LENNOX_HVAC_OFF,
@@ -30,7 +30,7 @@ export class Thermostat {
   private readonly COMMAND_DEBOUNCE_MS = 5000; // 5 seconds
 
   constructor(
-    private readonly platform: LennoxIComfortModernPlatform,
+    private readonly platform: LennoxIComfortCloudPlatform,
     private readonly accessory: PlatformAccessory,
     zone: ThermostatZone,
   ) {

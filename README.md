@@ -35,7 +35,7 @@ A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermosta
 
 ### Via Homebridge UI (Recommended)
 
-1. Search for `homebridge-lennox-icomfort-modern` in the Homebridge UI plugin search
+1. Search for `homebridge-lennox-icomfort-cloud` in the Homebridge UI plugin search
 2. Click Install
 3. Select your device type (S30/S40/E30/M30 or Wifi)
 4. Configure with your iComfort account credentials
@@ -43,7 +43,7 @@ A [Homebridge](https://homebridge.io) plugin for Lennox iComfort smart thermosta
 ### Via Command Line
 
 ```bash
-npm install -g homebridge-lennox-icomfort-modern
+npm install -g homebridge-lennox-icomfort-cloud
 ```
 
 ## Configuration
@@ -56,7 +56,7 @@ Add the platform to your Homebridge `config.json`:
 {
   "platforms": [
     {
-      "platform": "LennoxIComfortModern",
+      "platform": "LennoxIComfortCloud",
       "name": "Lennox iComfort",
       "deviceType": "s30",
       "username": "your-email@example.com",
@@ -72,7 +72,7 @@ Add the platform to your Homebridge `config.json`:
 {
   "platforms": [
     {
-      "platform": "LennoxIComfortModern",
+      "platform": "LennoxIComfortCloud",
       "name": "Lennox iComfort",
       "deviceType": "wifi",
       "username": "your-email@example.com",
@@ -113,4 +113,4 @@ Apache-2.0
 
 ## Feedback & Issues
 
-Please submit any issues or feature requests to the [GitHub Issues](https://github.com/lukezbihlyj/homebridge-lennox-icomfort-modern/issues) page.
+Please submit any issues or feature requests to the [GitHub Issues](https://github.com/lukezbihlyj/homebridge-lennox-icomfort-cloud/issues) page.
