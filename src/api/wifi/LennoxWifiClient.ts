@@ -38,6 +38,9 @@ export class LennoxWifiClient implements LennoxClient {
   // Callbacks for updates
   private updateCallbacks: ZoneUpdateCallback[] = [];
 
+  // Callbacks for when a zone becomes active (not needed for wifi - all zones discovered in initialize)
+  private newZoneCallbacks: ZoneUpdateCallback[] = [];
+
   // Polling state
   private isPolling: boolean = false;
 
@@ -144,7 +147,7 @@ export class LennoxWifiClient implements LennoxClient {
     }
   }
 
-  async initialize(): Promise<void> {
+  async initialize(): Promise<boolean> {
     this.log.info('Discovering iComfort Wifi thermostats...');
 
     const systemsResponse = await this.getSystemsInfo();
@@ -184,6 +187,7 @@ export class LennoxWifiClient implements LennoxClient {
     }
 
     this.log.info(`Initialized ${this.zones.size} thermostat(s)`);
+    return true;
   }
 
   getZones(): ThermostatZone[] {
@@ -192,6 +196,10 @@ export class LennoxWifiClient implements LennoxClient {
 
   onUpdate(callback: ZoneUpdateCallback): void {
     this.updateCallbacks.push(callback);
+  }
+
+  onNewZone(callback: ZoneUpdateCallback): void {
+    this.newZoneCallbacks.push(callback);
   }
 
   async startMessagePump(onError?: (error: Error) => void): Promise<void> {

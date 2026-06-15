@@ -69,6 +69,9 @@ export class LennoxIComfortCloudPlatform implements DynamicPlatformPlugin {
   // Map of zone unique IDs to Thermostat handlers
   private thermostatHandlers: Map<string, Thermostat> = new Map();
 
+  // Track whether initialization completed with all zone data
+  private initializationComplete = false;
+
   constructor(
     public readonly log: Logger,
     public readonly config: PlatformConfig,
@@ -173,7 +176,8 @@ export class LennoxIComfortCloudPlatform implements DynamicPlatformPlugin {
 
       // Initialize and wait for zone data
       this.log.info('Initializing systems and zones...');
-      await this.client.initialize();
+      const initSuccess = await this.client.initialize();
+      this.initializationComplete = initSuccess;
 
       // Start the message pump for ongoing updates
       this.client.startMessagePump((error) => {
@@ -194,8 +198,19 @@ export class LennoxIComfortCloudPlatform implements DynamicPlatformPlugin {
         this.registerZoneAccessory(zone);
       }
 
-      // Remove any cached accessories that are no longer present
-      this.cleanupStaleAccessories();
+      // Only remove stale accessories when initialization completed successfully.
+      // If init timed out, we don't have full zone data, so we preserve cached
+      // accessories and let the message pump deliver zone data later.
+      if (initSuccess) {
+        this.cleanupStaleAccessories();
+      } else {
+        this.log.warn('Initialization incomplete - preserving cached accessories until zone data is received');
+
+        // Register for late-arriving zones that become active after timeout
+        this.client.onNewZone((zone) => {
+          this.handleLateZoneDiscovery(zone);
+        });
+      }
 
     } catch (error) {
       if (error instanceof LennoxS30Error) {
@@ -278,6 +293,39 @@ export class LennoxIComfortCloudPlatform implements DynamicPlatformPlugin {
 
       // Register with Homebridge
       this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    }
+  }
+
+  /**
+   * Handle a zone that becomes active after initial discovery timed out.
+   * Registers it as a new accessory if it wasn't already registered,
+   * and once all zones from all systems are discovered, runs stale cleanup.
+   */
+  private handleLateZoneDiscovery(zone: ThermostatZone): void {
+    const uniqueId = this.debug ? `dev_${zone.uniqueId}` : zone.uniqueId;
+    const uuid = this.api.hap.uuid.generate(uniqueId);
+
+    const alreadyRegistered = this.accessories.some(acc => acc.UUID === uuid)
+      || this.thermostatHandlers.has(zone.uniqueId);
+
+    if (!alreadyRegistered) {
+      this.log.info(`Zone '${zone.name}' became active after init timeout - registering as new accessory`);
+      if (this.thermostatHandlers.size === 0) {
+        this.setTemperatureUnit();
+      }
+      this.registerZoneAccessory(zone);
+    }
+
+    // Check if all systems now have active zones - if so, initialization is truly complete
+    if (!this.initializationComplete && this.s30Client) {
+      const allReady = Array.from(this.s30Client.systems.values()).every(
+        system => system.getActiveZones().length > 0,
+      );
+      if (allReady) {
+        this.log.info('All zones discovered after init timeout - running stale accessory cleanup');
+        this.initializationComplete = true;
+        this.cleanupStaleAccessories();
+      }
     }
   }
 

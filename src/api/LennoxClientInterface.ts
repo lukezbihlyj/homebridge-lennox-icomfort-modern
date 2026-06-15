@@ -140,8 +140,9 @@ export interface LennoxClient {
 
   /**
    * Initialize and discover all zones
+   * @returns true if all zones were discovered, false if initialization timed out
    */
-  initialize(): Promise<void>;
+  initialize(): Promise<boolean>;
 
   /**
    * Get all discovered zones
@@ -152,6 +153,12 @@ export interface LennoxClient {
    * Register callback for zone updates
    */
   onUpdate(callback: ZoneUpdateCallback): void;
+
+  /**
+   * Register callback for when a zone becomes active (receives data for the first time)
+   * Used to handle late zone discovery after initialization timeout.
+   */
+  onNewZone(callback: ZoneUpdateCallback): void;
 
   /**
    * Start the message/polling pump for real-time updates

@@ -68,6 +68,9 @@ export class LennoxS30Client {
   // Callbacks for updates
   private updateCallbacks: Array<(zone: LennoxZone) => void> = [];
 
+  // Callbacks for when a zone becomes active for the first time
+  private newZoneCallbacks: Array<(zone: LennoxZone) => void> = [];
+
   // Logger
   private log: Logger;
 
@@ -110,6 +113,13 @@ export class LennoxS30Client {
    */
   onUpdate(callback: (zone: LennoxZone) => void): void {
     this.updateCallbacks.push(callback);
+  }
+
+  /**
+   * Register a callback for when a zone becomes active (receives temperature data for the first time)
+   */
+  onNewZone(callback: (zone: LennoxZone) => void): void {
+    this.newZoneCallbacks.push(callback);
   }
 
   /**
@@ -560,6 +570,7 @@ export class LennoxS30Client {
   private processZonesData(system: LennoxSystem, zones: ZoneData[]): void {
     for (const zoneData of zones) {
       const zone = system.getOrCreateZone(zoneData.id);
+      const wasActive = zone.isActive();
       zone.updateFromData(zoneData);
 
       // Copy system info to zone for interface compatibility
@@ -569,6 +580,16 @@ export class LennoxS30Client {
 
       // Notify callbacks of zone updates
       if (zone.isActive()) {
+        // If zone just became active, fire new zone callbacks
+        if (!wasActive) {
+          for (const callback of this.newZoneCallbacks) {
+            try {
+              callback(zone);
+            } catch (error) {
+              this.log.error(`New zone callback error: ${error}`);
+            }
+          }
+        }
         for (const callback of this.updateCallbacks) {
           try {
             callback(zone);
@@ -835,7 +856,7 @@ export class LennoxS30Client {
   /**
    * Initialize all systems - subscribe and wait for initial data
    */
-  async initialize(): Promise<void> {
+  async initialize(): Promise<boolean> {
     // Subscribe to all systems
     for (const system of this.systems.values()) {
       await this.subscribe(system);
@@ -858,7 +879,7 @@ export class LennoxS30Client {
 
       if (allSystemsReady) {
         this.log.info('All systems initialized with zone data');
-        return;
+        return true;
       }
 
       // Poll for more data
@@ -866,7 +887,8 @@ export class LennoxS30Client {
       await this.sleep(1000);
     }
 
-    this.log.warn('Timeout waiting for zone configuration');
+    this.log.warn('Timeout waiting for zone configuration - preserving cached accessories');
+    return false;
   }
 
   /**
